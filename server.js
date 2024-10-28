@@ -1,6 +1,14 @@
 const express = require('express');
 const redis = require('redis');
+const admin = require('firebase-admin');
 const { createObjectCsvWriter } = require('csv-writer');
+
+// Firebase 초기화
+const serviceAccount = require('/home/hyeseoshin/redis-server-csv/node_modules/google-services.json');
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  databaseURL: 'https://flutter-test-df9b9-default-rtdb.asia-southeast1.firebasedatabase.app',
+});
 
 // Redis 클라이언트 생성
 const redisClient = redis.createClient();
@@ -9,22 +17,20 @@ redisClient.on('error', (err) => console.log('Redis Client Error', err));
 const app = express();
 const port = 3000;
 
-// JSON 데이터 파싱을 위한 미들웨어
-app.use(express.json());
+// Firebase에서 데이터 가져와 Redis에 저장하는 함수
+async function syncFirebaseToRedis() {
+  const db = admin.database();
+  const ref = db.ref('https://flutter-test-df9b9-default-rtdb.asia-southeast1.firebasedatabase.app/');
 
-// Flutter로부터 데이터를 받아 Redis에 저장하는 API
-app.post('/save-to-redis', (req, res) => {
-  const data = req.body;  // Flutter가 보낸 JSON 데이터
-
-  redisClient.set('your_key', JSON.stringify(data), (err) => {
-    if (err) {
-      console.log('Error saving to Redis:', err);
-      return res.status(500).send('Error saving data to Redis');
-    }
-    console.log('Data saved to Redis:', data);
-    res.send('Data successfully saved to Redis');
+  ref.on('value', (snapshot) => {
+    const data = snapshot.val();
+    redisClient.set('your_key', JSON.stringify(data), (err) => {
+      if (err) {
+        console.log('Error saving to Redis:', err);
+      }
+    });
   });
-});
+}
 
 // CSV로 추출하는 API
 app.get('/export-csv', async (req, res) => {
@@ -59,7 +65,8 @@ app.get('/export-csv', async (req, res) => {
   });
 });
 
-// 서버 시작
+//이거 오류나면 서버 안되는거임
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
+  syncFirebaseToRedis();
 });
